@@ -1,0 +1,30 @@
+{
+  "name": "health-care-appointment",
+  "version": "1.0.0",
+  "description": "## Project Structure made - `frontend/` - `backend/` - `docs/`",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "nodemon backend/server.js",
+    "install:all": "npm install && npm install --prefix backend && npm install --prefix frontend",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SinthanaPrabakaran/Healthcare-appointment.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/SinthanaPrabakaran/Healthcare-appointment/issues"
+  },
+  "homepage": "https://github.com/SinthanaPrabakaran/Healthcare-appointment#readme",
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "nodemon": "^3.1.14"
+  }
+}
