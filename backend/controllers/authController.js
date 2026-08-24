@@ -14,6 +14,10 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'Please provide name, email, and password.' });
     }
 
+    if (typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Invalid input types.' });
+    }
+
     const emailRegex = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ message: 'Please provide a valid email address.' });
@@ -52,6 +56,9 @@ export const registerUser = async (req, res) => {
     }
   } catch (error) {
     console.error('Registration error:', error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'User with this email already exists.' });
+    }
     res.status(500).json({ message: 'Server error during registration.' });
   }
 };
@@ -66,6 +73,10 @@ export const loginUser = async (req, res) => {
     // Validation
     if (!email || !password) {
       return res.status(400).json({ message: 'Please provide email and password.' });
+    }
+
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ message: 'Invalid input types.' });
     }
 
     // Find user by email
