@@ -3,6 +3,7 @@ import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import { generateSlots } from '../services/slotService.js';
 import { generatePreVisitSummary as generateSummaryLLM, generatePostVisitSummary as generatePostSummaryLLM } from '../services/llmService.js';
+import { generateRemindersForAppointment } from '../services/medicationReminderService.js';
 
 // Helper function to validate inputs and doctor availability
 const validateSlotRequest = async (doctorId, date, startTime, endTime, symptoms) => {
@@ -600,6 +601,14 @@ export const completeAppointment = async (req, res) => {
 
     await appointment.save();
 
+    // Task 3: Generate Medication Reminders safely
+    let remindersCreated = 0;
+    try {
+      remindersCreated = await generateRemindersForAppointment(appointment);
+    } catch (reminderErr) {
+      console.error('Failed to create medication reminders:', reminderErr);
+    }
+
     res.status(200).json({
       message: 'Appointment completed successfully',
       appointment: {
@@ -609,7 +618,8 @@ export const completeAppointment = async (req, res) => {
         postVisitNotes: appointment.postVisitNotes,
         prescription: appointment.prescription,
         followUpInstructions: appointment.followUpInstructions
-      }
+      },
+      remindersCreated
     });
 
   } catch (error) {
