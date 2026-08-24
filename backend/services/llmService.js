@@ -1,49 +1,59 @@
-import OpenAI from 'openai';
+import { GoogleGenAI, Type } from '@google/genai';
 
 export const generatePreVisitSummary = async (symptoms) => {
   if (!symptoms || typeof symptoms !== 'string' || symptoms.trim() === '') {
     throw new Error('Symptoms are required to generate a summary.');
   }
 
-  const apiKey = process.env.LLM_API_KEY;
-  const model = process.env.LLM_MODEL || 'gpt-3.5-turbo-0125'; // Fallback to a fast JSON-capable model if not set
+  const apiKey = process.env.GEMINI_API_KEY;
+  const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
   if (!apiKey) {
     throw new Error('LLM API key is not configured.');
   }
 
-  const openai = new OpenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey });
 
-  const systemPrompt = `
+  const systemInstruction = `
 You are a medical assistant summarizing patient symptoms for clinician review.
 Do not provide a definitive diagnosis or treatment recommendation. Summarize the reported symptoms for clinician review.
 
-Analyse these symptoms and return: urgency level (Low / Medium / High), chief complaint, and three suggested questions for the doctor. 
-
-You MUST return the output strictly as a JSON object with this exact structure:
-{
-    "urgencyLevel": "Low | Medium | High",
-    "chiefComplaint": "string",
-    "suggestedQuestions": [
-        "string",
-        "string",
-        "string"
-    ]
-}
+Analyse these symptoms and return: urgency level (Low / Medium / High), chief complaint, and exactly three suggested questions for the doctor. 
 `;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Symptoms: ${symptoms}` }
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.2 // Keep it factual and consistent
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: `Symptoms: ${symptoms}`,
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        temperature: 0.2, // Keep it factual and consistent
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            urgencyLevel: {
+              type: Type.STRING,
+              description: "Must be exactly 'Low', 'Medium', or 'High'"
+            },
+            chiefComplaint: {
+              type: Type.STRING,
+              description: "A concise summary of the chief complaint"
+            },
+            suggestedQuestions: {
+              type: Type.ARRAY,
+              description: "Exactly three suggested questions for the doctor",
+              items: {
+                type: Type.STRING
+              }
+            }
+          },
+          required: ["urgencyLevel", "chiefComplaint", "suggestedQuestions"]
+        }
+      }
     });
 
-    const responseContent = completion.choices[0]?.message?.content;
+    const responseContent = response.text;
     if (!responseContent) {
       throw new Error('LLM returned an empty response.');
     }
@@ -77,7 +87,7 @@ You MUST return the output strictly as a JSON object with this exact structure:
     };
 
   } catch (error) {
-    // Throw error so the controller can catch it and return a 503 safely without crashing the server.
-    throw new Error(`LLM Generation Failed: ${error.message}`);
+    // We throw the error to let the controller catch it and return a 503 safely.
+    throw new Error(`Gemini LLM generation failed: ${error.message}`);
   }
 };
