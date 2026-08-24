@@ -35,15 +35,27 @@ const appointmentSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['BOOKED', 'CANCELLED', 'COMPLETED'],
+    enum: ['HELD', 'BOOKED', 'CANCELLED', 'COMPLETED'],
     default: 'BOOKED'
+  },
+  holdExpiresAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true
 });
 
-// Index to optimize queries and prepare for Phase 7 concurrency mechanism
-appointmentSchema.index({ doctor: 1, date: 1, startTime: 1, status: 1 });
+// Phase 7: MongoDB Partial Unique Index for robust concurrency protection
+// This guarantees that there can be ONLY ONE active appointment (BOOKED or HELD)
+// per doctor per slot.
+appointmentSchema.index(
+  { doctor: 1, date: 1, startTime: 1 },
+  { 
+    unique: true, 
+    partialFilterExpression: { status: { $in: ['BOOKED', 'HELD'] } } 
+  }
+);
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Doctor from '../models/Doctor.js';
+import Appointment from '../models/Appointment.js';
 import { generateSlots } from '../services/slotService.js';
 
 export const getDoctorSlots = async (req, res) => {
@@ -76,7 +77,41 @@ export const getDoctorSlots = async (req, res) => {
 
     // Generate slots
     try {
-      const slots = generateSlots(workingHours, doctor.slotDuration);
+      const generatedSlots = generateSlots(workingHours, doctor.slotDuration);
+      
+      // Phase 7: Reflect BOOKED and active HELD appointments
+      const activeAppointments = await Appointment.find({
+        doctor: doctorId,
+        date: date,
+        status: { $in: ['BOOKED', 'HELD'] }
+      });
+
+      const now = new Date();
+
+      const slots = generatedSlots.map(slot => {
+        // Find if this slot is taken
+        const conflict = activeAppointments.find(app => app.startTime === slot.startTime);
+        
+        let available = true;
+        if (conflict) {
+          if (conflict.status === 'BOOKED') {
+            available = false;
+          } else if (conflict.status === 'HELD') {
+            if (conflict.holdExpiresAt && conflict.holdExpiresAt > now) {
+              available = false;
+            } else {
+              // Expired hold: available = true
+              available = true;
+            }
+          }
+        }
+
+        return {
+          ...slot,
+          available
+        };
+      });
+
       return res.status(200).json({
         doctorId,
         date,

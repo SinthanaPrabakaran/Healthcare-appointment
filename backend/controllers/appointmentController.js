@@ -3,7 +3,196 @@ import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import { generateSlots } from '../services/slotService.js';
 
-// @desc    Book an appointment
+// Helper function to validate inputs and doctor availability
+const validateSlotRequest = async (doctorId, date, startTime, endTime, symptoms) => {
+  if (!doctorId || !date || !startTime || !endTime || !symptoms) {
+    throw { status: 400, message: 'All fields are required' };
+  }
+  if (!mongoose.Types.ObjectId.isValid(doctorId)) {
+    throw { status: 400, message: 'Invalid doctor ID format' };
+  }
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(date)) {
+    throw { status: 400, message: 'Invalid date format. Use YYYY-MM-DD' };
+  }
+  if (typeof symptoms !== 'string' || symptoms.trim().length < 5 || symptoms.trim().length > 1000) {
+    throw { status: 400, message: 'Symptoms must be a string between 5 and 1000 characters' };
+  }
+
+  const [year, month, day] = date.split('-').map(Number);
+  const requestedDate = new Date(year, month - 1, day); 
+  
+  if (
+    requestedDate.getFullYear() !== year ||
+    requestedDate.getMonth() !== month - 1 ||
+    requestedDate.getDate() !== day
+  ) {
+    throw { status: 400, message: 'Invalid calendar date' };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (requestedDate < today) {
+    throw { status: 400, message: 'Cannot book an appointment for a past date' };
+  }
+
+  const doctor = await Doctor.findById(doctorId);
+  if (!doctor) {
+    throw { status: 404, message: 'Doctor not found' };
+  }
+
+  if (doctor.leaveDates && doctor.leaveDates.includes(date)) {
+    throw { status: 400, message: 'Doctor is on leave on this date' };
+  }
+
+  const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const exactDateUTC = new Date(Date.UTC(year, month - 1, day));
+  const dayName = daysOfWeek[exactDateUTC.getUTCDay()];
+
+  const workingHours = doctor.workingHours[dayName];
+  if (!workingHours || !workingHours.enabled) {
+    throw { status: 400, message: 'Doctor does not work on this date' };
+  }
+
+  let generatedSlots = [];
+  try {
+    generatedSlots = generateSlots(workingHours, doctor.slotDuration);
+  } catch (err) {
+    throw { status: 500, message: 'Error generating doctor slots' };
+  }
+
+  const isValidSlot = generatedSlots.find(
+    slot => slot.startTime === startTime && slot.endTime === endTime
+  );
+
+  if (!isValidSlot) {
+    throw { status: 400, message: 'Invalid appointment slot' };
+  }
+  
+  return doctor;
+};
+
+// Helper function to safely create appointment using DB partial unique index
+const safeCreateAppointment = async (appointmentData) => {
+  try {
+    return await Appointment.create(appointmentData);
+  } catch (error) {
+    if (error.code === 11000) { // Duplicate key error
+      // Find the conflicting appointment
+      const conflictingAppt = await Appointment.findOne({
+        doctor: appointmentData.doctor,
+        date: appointmentData.date,
+        startTime: appointmentData.startTime,
+        status: { $in: ['BOOKED', 'HELD'] }
+      });
+
+      if (conflictingAppt) {
+        // If the blocking appointment is an expired hold, clear it and retry!
+        if (conflictingAppt.status === 'HELD' && conflictingAppt.holdExpiresAt && conflictingAppt.holdExpiresAt <= new Date()) {
+          conflictingAppt.status = 'CANCELLED';
+          conflictingAppt.holdExpiresAt = null;
+          await conflictingAppt.save();
+
+          try {
+            return await Appointment.create(appointmentData);
+          } catch (retryError) {
+             throw { status: 409, message: 'This appointment slot is currently unavailable' };
+          }
+        }
+      }
+      throw { status: 409, message: 'This appointment slot is currently unavailable' };
+    }
+    throw error; // Other generic DB errors
+  }
+};
+
+// @desc    Hold an appointment slot
+// @route   POST /api/appointments/hold
+// @access  Private/Patient
+export const holdAppointment = async (req, res) => {
+  try {
+    const { doctorId, date, startTime, endTime, symptoms } = req.body;
+    const patientId = req.user.userId;
+
+    await validateSlotRequest(doctorId, date, startTime, endTime, symptoms);
+
+    const holdMinutes = parseInt(process.env.APPOINTMENT_HOLD_MINUTES, 10) || 5;
+    const holdExpiresAt = new Date(Date.now() + holdMinutes * 60000);
+
+    const appointment = await safeCreateAppointment({
+      patient: patientId,
+      doctor: doctorId,
+      date,
+      startTime,
+      endTime,
+      symptoms: symptoms.trim(),
+      status: 'HELD',
+      holdExpiresAt
+    });
+
+    res.status(201).json({
+      message: 'Appointment slot held successfully',
+      appointment: {
+        id: appointment._id,
+        status: appointment.status,
+        holdExpiresAt: appointment.holdExpiresAt
+      }
+    });
+  } catch (error) {
+    const status = error.status || 500;
+    const message = error.message || 'Server error holding appointment';
+    if (status === 500) console.error('Hold appointment error:', error);
+    res.status(status).json({ message });
+  }
+};
+
+// @desc    Confirm a held appointment
+// @route   POST /api/appointments/:id/confirm
+// @access  Private/Patient
+export const confirmAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const patientId = req.user.userId;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid appointment ID' });
+    }
+
+    const appointment = await Appointment.findById(id);
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    if (appointment.patient.toString() !== patientId) {
+      return res.status(403).json({ message: 'Not authorized to confirm this appointment' });
+    }
+
+    if (appointment.status !== 'HELD') {
+      return res.status(409).json({ message: 'Only held appointments can be confirmed' });
+    }
+
+    if (appointment.holdExpiresAt && appointment.holdExpiresAt <= new Date()) {
+      return res.status(409).json({ message: 'This appointment hold has expired' });
+    }
+
+    appointment.status = 'BOOKED';
+    appointment.holdExpiresAt = null;
+    await appointment.save();
+
+    res.status(200).json({
+      message: 'Appointment confirmed successfully',
+      appointment: {
+        status: appointment.status
+      }
+    });
+  } catch (error) {
+    console.error('Confirm appointment error:', error);
+    res.status(500).json({ message: 'Server error confirming appointment' });
+  }
+};
+
+// @desc    Book an appointment directly
 // @route   POST /api/appointments
 // @access  Private/Patient
 export const createAppointment = async (req, res) => {
@@ -11,100 +200,17 @@ export const createAppointment = async (req, res) => {
     const { doctorId, date, startTime, endTime, symptoms } = req.body;
     const patientId = req.user.userId;
 
-    // 1. Validate inputs
-    if (!doctorId || !date || !startTime || !endTime || !symptoms) {
-      return res.status(400).json({ message: 'All fields are required' });
-    }
+    await validateSlotRequest(doctorId, date, startTime, endTime, symptoms);
 
-    if (!mongoose.Types.ObjectId.isValid(doctorId)) {
-      return res.status(400).json({ message: 'Invalid doctor ID format' });
-    }
-
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(date)) {
-      return res.status(400).json({ message: 'Invalid date format. Use YYYY-MM-DD' });
-    }
-    
-    if (typeof symptoms !== 'string' || symptoms.trim().length < 5 || symptoms.trim().length > 1000) {
-      return res.status(400).json({ message: 'Symptoms must be a string between 5 and 1000 characters' });
-    }
-
-    // 2. Validate real calendar date & past dates
-    const [year, month, day] = date.split('-').map(Number);
-    const requestedDate = new Date(year, month - 1, day); 
-    
-    if (
-      requestedDate.getFullYear() !== year ||
-      requestedDate.getMonth() !== month - 1 ||
-      requestedDate.getDate() !== day
-    ) {
-      return res.status(400).json({ message: 'Invalid calendar date' });
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (requestedDate < today) {
-      return res.status(400).json({ message: 'Cannot book an appointment for a past date' });
-    }
-
-    // 3. Find Doctor
-    const doctor = await Doctor.findById(doctorId);
-    if (!doctor) {
-      return res.status(404).json({ message: 'Doctor not found' });
-    }
-
-    // 4. Slot Validation using existing service
-    if (doctor.leaveDates && doctor.leaveDates.includes(date)) {
-      return res.status(400).json({ message: 'Doctor is on leave on this date' });
-    }
-
-    const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const exactDateUTC = new Date(Date.UTC(year, month - 1, day));
-    const dayName = daysOfWeek[exactDateUTC.getUTCDay()];
-
-    const workingHours = doctor.workingHours[dayName];
-    if (!workingHours || !workingHours.enabled) {
-      return res.status(400).json({ message: 'Doctor does not work on this date' });
-    }
-
-    let generatedSlots = [];
-    try {
-      generatedSlots = generateSlots(workingHours, doctor.slotDuration);
-    } catch (err) {
-      return res.status(500).json({ message: 'Error generating doctor slots' });
-    }
-
-    const isValidSlot = generatedSlots.find(
-      slot => slot.startTime === startTime && slot.endTime === endTime
-    );
-
-    if (!isValidSlot) {
-      return res.status(400).json({ message: 'Invalid appointment slot' });
-    }
-
-    // 5. Duplicate Booking Check (Phase 6 simple check)
-    // CANCELLED slots do not block re-booking
-    const existingAppointment = await Appointment.findOne({
-      doctor: doctorId,
-      date,
-      startTime,
-      status: 'BOOKED'
-    });
-
-    if (existingAppointment) {
-      return res.status(409).json({ message: 'This appointment slot is already booked' });
-    }
-
-    // 6. Create Appointment
-    const appointment = await Appointment.create({
+    const appointment = await safeCreateAppointment({
       patient: patientId,
       doctor: doctorId,
       date,
       startTime,
       endTime,
       symptoms: symptoms.trim(),
-      status: 'BOOKED'
+      status: 'BOOKED',
+      holdExpiresAt: null
     });
 
     res.status(201).json({
@@ -121,8 +227,10 @@ export const createAppointment = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Book appointment error:', error);
-    res.status(500).json({ message: 'Server error booking appointment' });
+    const status = error.status || 500;
+    const message = error.message || 'Server error booking appointment';
+    if (status === 500) console.error('Book appointment error:', error);
+    res.status(status).json({ message });
   }
 };
 
@@ -246,6 +354,7 @@ export const cancelAppointment = async (req, res) => {
     }
 
     appointment.status = 'CANCELLED';
+    appointment.holdExpiresAt = null; // Clear hold if it was HELD
     await appointment.save();
 
     res.status(200).json({
