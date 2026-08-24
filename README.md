@@ -2,6 +2,8 @@
 
 An end-to-end Healthcare Appointment & Follow-up Management Platform built with Node.js, Express.js, MongoDB, Mongoose, React, Vite, TailwindCSS, Google Gemini AI (`@google/genai`), Nodemailer, node-cron, and Google Calendar API (OAuth 2.0).
 
+🌐 **Live Application URL:** [https://healthcare-appointment-six-pi.vercel.app/](https://healthcare-appointment-six-pi.vercel.app/)
+
 ---
 
 ## 📋 Table of Contents
