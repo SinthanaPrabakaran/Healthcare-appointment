@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Doctor from '../models/Doctor.js';
+import Appointment from '../models/Appointment.js';
+import { createDoctorLeaveNotifications } from '../services/notificationService.js';
 
 // @desc    Create a new doctor
 // @route   POST /api/doctors
@@ -205,7 +207,24 @@ export const updateDoctor = async (req, res) => {
     if (specialization) doctor.specialization = specialization;
     if (slotDuration) doctor.slotDuration = slotDuration;
     if (workingHours) doctor.workingHours = workingHours;
-    if (leaveDates) doctor.leaveDates = leaveDates;
+    if (leaveDates && Array.isArray(leaveDates)) {
+      doctor.leaveDates = leaveDates;
+
+      // Check for affected booked appointments
+      try {
+        const affectedApps = await Appointment.find({
+          doctor: doctor._id,
+          date: { $in: leaveDates },
+          status: 'BOOKED'
+        }).populate('patient', 'name email');
+
+        if (affectedApps.length > 0) {
+          createDoctorLeaveNotifications(affectedApps, user.name);
+        }
+      } catch (leaveNotifErr) {
+        console.error('Failed to notify patients of doctor leave:', leaveNotifErr);
+      }
+    }
 
     const updatedDoctor = await doctor.save();
     

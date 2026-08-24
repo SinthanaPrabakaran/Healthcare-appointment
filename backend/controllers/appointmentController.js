@@ -4,6 +4,7 @@ import Doctor from '../models/Doctor.js';
 import { generateSlots } from '../services/slotService.js';
 import { generatePreVisitSummary as generateSummaryLLM, generatePostVisitSummary as generatePostSummaryLLM } from '../services/llmService.js';
 import { generateRemindersForAppointment } from '../services/medicationReminderService.js';
+import { createBookingConfirmationNotifications, createCancellationNotifications } from '../services/notificationService.js';
 
 // Helper function to validate inputs and doctor availability
 const validateSlotRequest = async (doctorId, date, startTime, endTime, symptoms) => {
@@ -182,6 +183,16 @@ export const confirmAppointment = async (req, res) => {
     appointment.holdExpiresAt = null;
     await appointment.save();
 
+    // Trigger Notification safely
+    try {
+      const populated = await Appointment.findById(appointment._id)
+        .populate('patient', 'name email')
+        .populate({ path: 'doctor', select: 'specialization userId', populate: { path: 'userId', select: 'name email' } });
+      createBookingConfirmationNotifications(populated);
+    } catch (notifErr) {
+      console.error('Failed to trigger confirmation notification:', notifErr);
+    }
+
     res.status(200).json({
       message: 'Appointment confirmed successfully',
       appointment: {
@@ -214,6 +225,16 @@ export const createAppointment = async (req, res) => {
       status: 'BOOKED',
       holdExpiresAt: null
     });
+
+    // Trigger Notification safely
+    try {
+      const populated = await Appointment.findById(appointment._id)
+        .populate('patient', 'name email')
+        .populate({ path: 'doctor', select: 'specialization userId', populate: { path: 'userId', select: 'name email' } });
+      createBookingConfirmationNotifications(populated);
+    } catch (notifErr) {
+      console.error('Failed to trigger booking notification:', notifErr);
+    }
 
     res.status(201).json({
       message: 'Appointment booked successfully',
@@ -381,6 +402,16 @@ export const cancelAppointment = async (req, res) => {
     appointment.status = 'CANCELLED';
     appointment.holdExpiresAt = null; // Clear hold if it was HELD
     await appointment.save();
+
+    // Trigger Cancellation Notification safely
+    try {
+      const populated = await Appointment.findById(appointment._id)
+        .populate('patient', 'name email')
+        .populate({ path: 'doctor', select: 'specialization userId', populate: { path: 'userId', select: 'name email' } });
+      createCancellationNotifications(populated);
+    } catch (notifErr) {
+      console.error('Failed to trigger cancellation notification:', notifErr);
+    }
 
     res.status(200).json({
       message: 'Appointment cancelled successfully',
