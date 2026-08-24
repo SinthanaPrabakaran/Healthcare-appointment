@@ -41,6 +41,21 @@ const appointmentSchema = new mongoose.Schema({
   holdExpiresAt: {
     type: Date,
     default: null
+  },
+  preVisitSummary: {
+    urgencyLevel: {
+      type: String,
+      enum: ["Low", "Medium", "High"]
+    },
+    chiefComplaint: {
+      type: String
+    },
+    suggestedQuestions: {
+      type: [String]
+    },
+    generatedAt: {
+      type: Date
+    }
   }
 }, {
   timestamps: true

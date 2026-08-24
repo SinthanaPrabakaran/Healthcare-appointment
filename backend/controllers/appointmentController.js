@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import { generateSlots } from '../services/slotService.js';
+import { generatePreVisitSummary as generateSummaryLLM } from '../services/llmService.js';
 
 // Helper function to validate inputs and doctor availability
 const validateSlotRequest = async (doctorId, date, startTime, endTime, symptoms) => {
@@ -373,5 +374,97 @@ export const cancelAppointment = async (req, res) => {
   } catch (error) {
     console.error('Cancel appointment error:', error);
     res.status(500).json({ message: 'Server error cancelling appointment' });
+  }
+};
+
+// @desc    Generate pre-visit summary
+// @route   POST /api/appointments/:id/previsit-summary
+// @access  Private/Doctor or Admin
+export const generatePreVisitSummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, role } = req.user; // Authenticated user
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid appointment ID' });
+    }
+
+    const appointment = await Appointment.findById(id).populate('doctor');
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    // Role Validation
+    if (role === 'DOCTOR') {
+      if (appointment.doctor.userId.toString() !== userId) {
+        return res.status(403).json({ message: 'You are not authorized to access this appointment' });
+      }
+    } else if (role !== 'ADMIN') {
+        return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    if (!appointment.symptoms || appointment.symptoms.trim() === '') {
+      return res.status(400).json({ message: 'No symptoms available for this appointment' });
+    }
+
+    let summaryResult;
+    try {
+      summaryResult = await generateSummaryLLM(appointment.symptoms);
+    } catch (llmError) {
+      console.error('LLM Service Error:', llmError.message);
+      return res.status(503).json({ message: 'Pre-visit summary is temporarily unavailable' });
+    }
+
+    // Save to DB
+    appointment.preVisitSummary = {
+      ...summaryResult,
+      generatedAt: new Date()
+    };
+
+    await appointment.save();
+
+    res.status(200).json({
+      message: 'Pre-visit summary generated successfully',
+      preVisitSummary: appointment.preVisitSummary
+    });
+  } catch (error) {
+    console.error('Generate summary error:', error);
+    res.status(500).json({ message: 'Server error generating summary' });
+  }
+};
+
+// @desc    Get pre-visit summary
+// @route   GET /api/appointments/:id/previsit-summary
+// @access  Private/Doctor or Admin
+export const getPreVisitSummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, role } = req.user;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid appointment ID' });
+    }
+
+    const appointment = await Appointment.findById(id).populate('doctor');
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    if (role === 'DOCTOR') {
+      if (appointment.doctor.userId.toString() !== userId) {
+        return res.status(403).json({ message: 'You are not authorized to access this appointment' });
+      }
+    } else if (role !== 'ADMIN') {
+        return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    res.status(200).json({
+      preVisitSummary: appointment.preVisitSummary || null
+    });
+  } catch (error) {
+    console.error('Get summary error:', error);
+    res.status(500).json({ message: 'Server error fetching summary' });
   }
 };

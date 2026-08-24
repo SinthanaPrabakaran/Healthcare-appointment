@@ -5,22 +5,42 @@ import {
   confirmAppointment,
   getPatientAppointments,
   getAppointmentById,
-  cancelAppointment
+  cancelAppointment,
+  generatePreVisitSummary,
+  getPreVisitSummary
 } from '../controllers/appointmentController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { authorizeRoles } from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
-// Protect all appointment routes: Requires JWT AND Patient role
-router.use(authenticateToken, authorizeRoles('PATIENT'));
+// All appointment routes require authentication
+router.use(authenticateToken);
 
-router.post('/hold', holdAppointment);
-router.post('/:id/confirm', confirmAppointment);
+// ==========================================
+// DOCTOR & ADMIN ROUTES
+// ==========================================
+// DO NOT expose clinical AI summaries to PATIENTS
+router.post(
+  '/:id/previsit-summary',
+  authorizeRoles('DOCTOR', 'ADMIN'),
+  generatePreVisitSummary
+);
 
-router.post('/', createAppointment);
-router.get('/my', getPatientAppointments);
-router.get('/:id', getAppointmentById);
-router.put('/:id/cancel', cancelAppointment);
+router.get(
+  '/:id/previsit-summary',
+  authorizeRoles('DOCTOR', 'ADMIN'),
+  getPreVisitSummary
+);
+
+// ==========================================
+// PATIENT ROUTES
+// ==========================================
+router.post('/hold', authorizeRoles('PATIENT'), holdAppointment);
+router.post('/:id/confirm', authorizeRoles('PATIENT'), confirmAppointment);
+router.post('/', authorizeRoles('PATIENT'), createAppointment);
+router.get('/my', authorizeRoles('PATIENT'), getPatientAppointments);
+router.get('/:id', authorizeRoles('PATIENT'), getAppointmentById);
+router.put('/:id/cancel', authorizeRoles('PATIENT'), cancelAppointment);
 
 export default router;
