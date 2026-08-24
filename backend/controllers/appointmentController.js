@@ -275,17 +275,18 @@ export const getPatientAppointments = async (req, res) => {
 
 // @desc    Get single appointment
 // @route   GET /api/appointments/:id
-// @access  Private/Patient
+// @access  Private/Patient, Doctor, or Admin
 export const getAppointmentById = async (req, res) => {
   try {
     const { id } = req.params;
-    const patientId = req.user.userId;
+    const { userId, role } = req.user;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid appointment ID' });
     }
 
     const appointment = await Appointment.findById(id)
+      .populate('patient', 'name')
       .populate({
         path: 'doctor',
         select: 'specialization userId',
@@ -299,7 +300,15 @@ export const getAppointmentById = async (req, res) => {
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
-    if (appointment.patient.toString() !== patientId) {
+    if (role === 'PATIENT' && appointment.patient._id.toString() !== userId) {
+      return res.status(403).json({ message: 'Not authorized to view this appointment' });
+    }
+    
+    if (role === 'DOCTOR' && appointment.doctor.userId._id.toString() !== userId) {
+      return res.status(403).json({ message: 'Not authorized to view this appointment' });
+    }
+
+    if (role !== 'PATIENT' && role !== 'DOCTOR' && role !== 'ADMIN') {
       return res.status(403).json({ message: 'Not authorized to view this appointment' });
     }
 
@@ -310,11 +319,20 @@ export const getAppointmentById = async (req, res) => {
       endTime: appointment.endTime,
       symptoms: appointment.symptoms,
       status: appointment.status,
+      patient: {
+        id: appointment.patient._id,
+        name: appointment.patient.name
+      },
       doctor: {
         id: appointment.doctor._id,
         specialization: appointment.doctor.specialization,
         name: appointment.doctor.userId ? appointment.doctor.userId.name : 'Unknown'
-      }
+      },
+      preVisitSummary: appointment.preVisitSummary,
+      postVisitNotes: appointment.postVisitNotes,
+      prescription: appointment.prescription,
+      followUpInstructions: appointment.followUpInstructions,
+      completedAt: appointment.completedAt
     };
 
     res.status(200).json({ appointment: formattedAppointment });
@@ -466,5 +484,131 @@ export const getPreVisitSummary = async (req, res) => {
   } catch (error) {
     console.error('Get summary error:', error);
     res.status(500).json({ message: 'Server error fetching summary' });
+  }
+};
+
+// @desc    Get logged in doctor's appointments
+// @route   GET /api/appointments/doctor
+// @access  Private/Doctor
+export const getDoctorAppointments = async (req, res) => {
+  try {
+    const doctorUser = await Doctor.findOne({ userId: req.user.userId });
+    if (!doctorUser) {
+        return res.status(404).json({ message: 'Doctor profile not found' });
+    }
+
+    const appointments = await Appointment.find({ doctor: doctorUser._id })
+      .populate('patient', 'name');
+
+    const formattedAppointments = appointments.map(app => ({
+      id: app._id,
+      date: app.date,
+      startTime: app.startTime,
+      endTime: app.endTime,
+      symptoms: app.symptoms,
+      status: app.status,
+      patient: {
+        id: app.patient._id,
+        name: app.patient.name
+      },
+      completedAt: app.completedAt
+    }));
+
+    res.status(200).json({ appointments: formattedAppointments });
+  } catch (error) {
+    console.error('Get doctor appointments error:', error);
+    res.status(500).json({ message: 'Server error fetching appointments' });
+  }
+};
+
+// @desc    Complete a consultation and add notes
+// @route   PUT /api/appointments/:id/complete
+// @access  Private/Doctor
+export const completeAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { postVisitNotes, prescription, followUpInstructions } = req.body;
+    const { userId, role } = req.user;
+
+    if (role !== 'DOCTOR') {
+        return res.status(403).json({ message: 'Only doctors can complete appointments' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid appointment ID' });
+    }
+
+    const appointment = await Appointment.findById(id).populate('doctor');
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    if (appointment.doctor.userId.toString() !== userId) {
+      return res.status(403).json({ message: 'You are not authorized to complete this appointment' });
+    }
+
+    if (appointment.status === 'COMPLETED') {
+        return res.status(409).json({ message: 'Appointment is already completed' });
+    }
+
+    if (appointment.status !== 'BOOKED') {
+        return res.status(409).json({ message: 'Appointment cannot be completed in its current state' });
+    }
+
+    if (!postVisitNotes || typeof postVisitNotes !== 'string' || postVisitNotes.trim() === '') {
+        return res.status(400).json({ message: 'Post-visit notes are required' });
+    }
+
+    if (prescription !== undefined) {
+        if (!Array.isArray(prescription)) {
+            return res.status(400).json({ message: 'Prescription must be an array' });
+        }
+        for (const med of prescription) {
+            if (!med.medicine || typeof med.medicine !== 'string' || med.medicine.trim() === '' ||
+                !med.dosage || typeof med.dosage !== 'string' || med.dosage.trim() === '' ||
+                !med.frequency || typeof med.frequency !== 'string' || med.frequency.trim() === '' ||
+                !med.duration || typeof med.duration !== 'string' || med.duration.trim() === '') {
+                return res.status(400).json({ message: 'Malformed medication entry in prescription' });
+            }
+        }
+    }
+
+    appointment.postVisitNotes = postVisitNotes.trim();
+    
+    if (prescription) {
+        appointment.prescription = prescription.map(med => ({
+            medicine: med.medicine.trim(),
+            dosage: med.dosage.trim(),
+            frequency: med.frequency.trim(),
+            duration: med.duration.trim(),
+            instructions: med.instructions ? med.instructions.trim() : ""
+        }));
+    }
+
+    if (followUpInstructions && typeof followUpInstructions === 'string') {
+        appointment.followUpInstructions = followUpInstructions.trim();
+    }
+
+    appointment.status = 'COMPLETED';
+    appointment.completedAt = new Date();
+
+    await appointment.save();
+
+    res.status(200).json({
+      message: 'Appointment completed successfully',
+      appointment: {
+        id: appointment._id,
+        status: appointment.status,
+        completedAt: appointment.completedAt,
+        postVisitNotes: appointment.postVisitNotes,
+        prescription: appointment.prescription,
+        followUpInstructions: appointment.followUpInstructions
+      }
+    });
+
+  } catch (error) {
+    console.error('Complete appointment error:', error);
+    res.status(500).json({ message: 'Server error completing appointment' });
   }
 };

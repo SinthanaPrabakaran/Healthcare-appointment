@@ -56,6 +56,49 @@ const appointmentSchema = new mongoose.Schema({
     generatedAt: {
       type: Date
     }
+  },
+  postVisitNotes: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  prescription: [
+    {
+      medicine: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      dosage: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      frequency: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      duration: {
+        type: String,
+        required: true,
+        trim: true
+      },
+      instructions: {
+        type: String,
+        trim: true,
+        default: ""
+      }
+    }
+  ],
+  followUpInstructions: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  completedAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true

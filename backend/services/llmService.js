@@ -6,7 +6,11 @@ export const generatePreVisitSummary = async (symptoms) => {
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  const modelName = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+  const modelName = process.env.GEMINI_MODEL;
+
+  if (!modelName) {
+    throw new Error('GEMINI_MODEL is not configured.');
+  }
 
   if (!apiKey) {
     throw new Error('LLM API key is not configured.');

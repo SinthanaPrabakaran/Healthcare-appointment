@@ -7,7 +7,9 @@ import {
   getAppointmentById,
   cancelAppointment,
   generatePreVisitSummary,
-  getPreVisitSummary
+  getPreVisitSummary,
+  getDoctorAppointments,
+  completeAppointment
 } from '../controllers/appointmentController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { authorizeRoles } from '../middleware/roleMiddleware.js';
@@ -34,13 +36,23 @@ router.get(
 );
 
 // ==========================================
+// DOCTOR ROUTES
+// ==========================================
+router.get('/doctor', authorizeRoles('DOCTOR'), getDoctorAppointments);
+router.put('/:id/complete', authorizeRoles('DOCTOR'), completeAppointment);
+
+// ==========================================
 // PATIENT ROUTES
 // ==========================================
 router.post('/hold', authorizeRoles('PATIENT'), holdAppointment);
 router.post('/:id/confirm', authorizeRoles('PATIENT'), confirmAppointment);
 router.post('/', authorizeRoles('PATIENT'), createAppointment);
 router.get('/my', authorizeRoles('PATIENT'), getPatientAppointments);
-router.get('/:id', authorizeRoles('PATIENT'), getAppointmentById);
 router.put('/:id/cancel', authorizeRoles('PATIENT'), cancelAppointment);
+
+// ==========================================
+// SHARED ROUTES
+// ==========================================
+router.get('/:id', authorizeRoles('PATIENT', 'DOCTOR', 'ADMIN'), getAppointmentById);
 
 export default router;
