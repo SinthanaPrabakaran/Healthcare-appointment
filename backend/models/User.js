@@ -23,6 +23,8 @@ const userSchema = new mongoose.Schema({
     enum: ['PATIENT', 'DOCTOR', 'ADMIN'],
     default: 'PATIENT'
   }
+}, {
+  timestamps: true
 });
 
 const User = mongoose.model('User', userSchema);
