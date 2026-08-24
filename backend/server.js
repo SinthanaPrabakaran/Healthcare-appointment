@@ -21,6 +21,7 @@ import authRoutes from "./routes/authRoutes.js";
 import doctorRoutes from "./routes/doctorRoutes.js";
 import slotRoutes from "./routes/slotRoutes.js";
 import appointmentRoutes from "./routes/appointmentRoutes.js";
+import calendarRoutes from "./routes/calendarRoutes.js";
 const app = express();
 
 connectDB();
@@ -33,6 +34,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/doctors", slotRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/calendar", calendarRoutes);
 
 app.get("/", (req, res) => {
   res.send("Healthcare Appointment API Running");

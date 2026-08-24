@@ -5,6 +5,7 @@ import { generateSlots } from '../services/slotService.js';
 import { generatePreVisitSummary as generateSummaryLLM, generatePostVisitSummary as generatePostSummaryLLM } from '../services/llmService.js';
 import { generateRemindersForAppointment } from '../services/medicationReminderService.js';
 import { createBookingConfirmationNotifications, createCancellationNotifications } from '../services/notificationService.js';
+import { syncAppointmentCalendarEvents } from '../services/calendarService.js';
 
 // Helper function to validate inputs and doctor availability
 const validateSlotRequest = async (doctorId, date, startTime, endTime, symptoms) => {
@@ -193,6 +194,9 @@ export const confirmAppointment = async (req, res) => {
       console.error('Failed to trigger confirmation notification:', notifErr);
     }
 
+    // Trigger Google Calendar Sync safely
+    syncAppointmentCalendarEvents(appointment._id).catch(err => console.error('Calendar sync error:', err));
+
     res.status(200).json({
       message: 'Appointment confirmed successfully',
       appointment: {
@@ -235,6 +239,9 @@ export const createAppointment = async (req, res) => {
     } catch (notifErr) {
       console.error('Failed to trigger booking notification:', notifErr);
     }
+
+    // Trigger Google Calendar Sync safely
+    syncAppointmentCalendarEvents(appointment._id).catch(err => console.error('Calendar sync error:', err));
 
     res.status(201).json({
       message: 'Appointment booked successfully',
@@ -412,6 +419,9 @@ export const cancelAppointment = async (req, res) => {
     } catch (notifErr) {
       console.error('Failed to trigger cancellation notification:', notifErr);
     }
+
+    // Trigger Google Calendar Sync safely
+    syncAppointmentCalendarEvents(appointment._id).catch(err => console.error('Calendar sync error:', err));
 
     res.status(200).json({
       message: 'Appointment cancelled successfully',

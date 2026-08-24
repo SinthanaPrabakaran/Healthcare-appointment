@@ -104,6 +104,29 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     trim: true,
     default: null
+  },
+  calendarEvents: {
+    patient: {
+      eventId: { type: String, default: null },
+      calendarId: { type: String, default: 'primary' }
+    },
+    doctor: {
+      eventId: { type: String, default: null },
+      calendarId: { type: String, default: 'primary' }
+    }
+  },
+  calendarSyncStatus: {
+    type: String,
+    enum: ['PENDING', 'SYNCED', 'PARTIAL', 'FAILED'],
+    default: 'PENDING'
+  },
+  calendarRetryCount: {
+    type: Number,
+    default: 0
+  },
+  calendarLastError: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true
