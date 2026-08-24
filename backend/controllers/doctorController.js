@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Doctor from '../models/Doctor.js';
 
@@ -75,12 +76,17 @@ export const createDoctor = async (req, res) => {
 // @access  Private (Authenticated users)
 export const getDoctors = async (req, res) => {
   try {
-    const { specialization, name, page = 1, limit = 10 } = req.query;
+    let { specialization, name, page = 1, limit = 10 } = req.query;
 
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
+    let pageNum = parseInt(page, 10);
+    let limitNum = parseInt(limit, 10);
+
+    // Prevent unreasonable limits
+    if (isNaN(pageNum) || pageNum < 1) pageNum = 1;
+    if (isNaN(limitNum) || limitNum < 1) limitNum = 10;
+    if (limitNum > 50) limitNum = 50;
+
     const skip = (pageNum - 1) * limitNum;
-
     const query = {};
 
     // Specialization search (case-insensitive, partial match)
@@ -107,13 +113,25 @@ export const getDoctors = async (req, res) => {
       
     // Get total count for pagination metadata
     const totalDoctors = await Doctor.countDocuments(query);
+    const totalPages = totalDoctors > 0 ? Math.ceil(totalDoctors / limitNum) : 0;
+
+    // Format response to flat structure
+    const formattedDoctors = doctors.map(doc => ({
+      id: doc._id,
+      name: doc.userId ? doc.userId.name : 'Unknown',
+      specialization: doc.specialization,
+      workingHours: doc.workingHours,
+      slotDuration: doc.slotDuration,
+      leaveDates: doc.leaveDates
+    }));
 
     res.status(200).json({
-      doctors,
+      doctors: formattedDoctors,
       pagination: {
-        total: totalDoctors,
         page: pageNum,
-        pages: Math.ceil(totalDoctors / limitNum)
+        limit: limitNum,
+        total: totalDoctors,
+        totalPages
       }
     });
   } catch (error) {
@@ -127,13 +145,30 @@ export const getDoctors = async (req, res) => {
 // @access  Private (Authenticated users)
 export const getDoctorById = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.params.id).populate('userId', 'name email role');
+    const { id } = req.params;
+
+    // Validate ObjectId to prevent MongoDB CastError
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid doctor ID format.' });
+    }
+
+    const doctor = await Doctor.findById(id).populate('userId', 'name email role');
 
     if (!doctor) {
       return res.status(404).json({ message: 'Doctor not found.' });
     }
 
-    res.status(200).json(doctor);
+    // Format response to flat structure
+    const formattedDoctor = {
+      id: doctor._id,
+      name: doctor.userId ? doctor.userId.name : 'Unknown',
+      specialization: doctor.specialization,
+      workingHours: doctor.workingHours,
+      slotDuration: doctor.slotDuration,
+      leaveDates: doctor.leaveDates
+    };
+
+    res.status(200).json({ doctor: formattedDoctor });
   } catch (error) {
     console.error('Get doctor by ID error:', error);
     res.status(500).json({ message: 'Server error fetching doctor.' });
