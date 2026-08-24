@@ -1,3 +1,4 @@
+import User from '../models/User.js';
 import Doctor from '../models/Doctor.js';
 
 // @desc    Create a new doctor
@@ -5,32 +6,99 @@ import Doctor from '../models/Doctor.js';
 // @access  Private/Admin
 export const createDoctor = async (req, res) => {
   try {
-    const { name, specialization, slotDuration, workingHours, leaveDates } = req.body;
+    const { name, email, password, specialization, slotDuration, workingHours, leaveDates } = req.body;
 
-    // Validation
-    if (!name || !specialization || !slotDuration) {
-      return res.status(400).json({ message: 'Name, specialization, and slot duration are required.' });
+    // 1. Validate required fields
+    if (!name || !email || !password || !specialization || !slotDuration) {
+      return res.status(400).json({ message: 'Missing required fields.' });
     }
 
-    if (typeof name !== 'string' || typeof specialization !== 'string') {
-      return res.status(400).json({ message: 'Invalid input types.' });
+    // 2. Check whether email already exists
+    const userExists = await User.findOne({ email: email.toLowerCase() });
+    if (userExists) {
+      return res.status(400).json({ message: 'User with this email already exists.' });
     }
 
-    const doctor = await Doctor.create({
-      name,
-      specialization,
-      slotDuration,
-      workingHours: workingHours || [],
-      leaveDates: leaveDates || []
-    });
+    // Manual Rollback / Transaction logic
+    // We avoid native MongoDB transactions here because they require a Replica Set.
+    // In local dev environments, MongoDB often runs standalone, which causes transactions to crash.
+    let createdUser;
+    try {
+      // 3. Create a User (password hashed by User model pre-save middleware)
+      createdUser = await User.create({
+        name,
+        email: email.toLowerCase(),
+        password,
+        role: 'DOCTOR' // Strictly enforce DOCTOR role
+      });
+    } catch (err) {
+      return res.status(500).json({ message: 'Error creating user account.', error: err.message });
+    }
 
-    res.status(201).json({
-      message: 'Doctor created successfully',
-      doctor
-    });
+    try {
+      // 5. Create Doctor profile using the newly created user's _id
+      const doctorProfile = await Doctor.create({
+        userId: createdUser._id,
+        specialization,
+        slotDuration,
+        workingHours: workingHours || {},
+        leaveDates: leaveDates || []
+      });
+
+      // 8. Return the created doctor and safe user information (excluding password)
+      res.status(201).json({
+        message: 'Doctor created successfully',
+        doctor: doctorProfile,
+        user: {
+          id: createdUser._id,
+          name: createdUser.name,
+          email: createdUser.email,
+          role: createdUser.role
+        }
+      });
+    } catch (err) {
+      // If doctor profile creation fails, delete the orphaned user account
+      await User.findByIdAndDelete(createdUser._id);
+      return res.status(500).json({ message: 'Error creating doctor profile. Rolled back.', error: err.message });
+    }
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'Email already exists.' });
+    }
     console.error('Create doctor error:', error);
     res.status(500).json({ message: 'Server error during doctor creation.' });
+  }
+};
+
+// @desc    Get all doctors
+// @route   GET /api/doctors
+// @access  Private (Authenticated users)
+export const getDoctors = async (req, res) => {
+  try {
+    // Use Mongoose populate to fetch User data, explicitly excluding the password
+    const doctors = await Doctor.find({}).populate('userId', '-password');
+    res.status(200).json(doctors);
+  } catch (error) {
+    console.error('Get doctors error:', error);
+    res.status(500).json({ message: 'Server error fetching doctors.' });
+  }
+};
+
+// @desc    Get single doctor
+// @route   GET /api/doctors/:id
+// @access  Private (Authenticated users)
+export const getDoctorById = async (req, res) => {
+  try {
+    const doctor = await Doctor.findById(req.params.id).populate('userId', '-password');
+
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor not found.' });
+    }
+
+    res.status(200).json(doctor);
+  } catch (error) {
+    console.error('Get doctor by ID error:', error);
+    res.status(500).json({ message: 'Server error fetching doctor.' });
   }
 };
 
@@ -39,28 +107,46 @@ export const createDoctor = async (req, res) => {
 // @access  Private/Admin
 export const updateDoctor = async (req, res) => {
   try {
-    const { name, specialization, slotDuration, workingHours, leaveDates } = req.body;
+    const { name, email, password, specialization, slotDuration, workingHours, leaveDates } = req.body;
 
-    const doctor = await Doctor.findById(req.params.id);
+    const doctor = await Doctor.findById(req.params.id).populate('userId');
 
     if (!doctor) {
       return res.status(404).json({ message: 'Doctor not found.' });
     }
 
-    // Update fields if provided
-    if (name) doctor.name = name;
+    const user = doctor.userId;
+
+    // Update User fields if provided
+    if (name) user.name = name;
+    if (email) {
+      const emailExists = await User.findOne({ email: email.toLowerCase(), _id: { $ne: user._id } });
+      if (emailExists) return res.status(400).json({ message: 'Email is already in use.' });
+      user.email = email.toLowerCase();
+    }
+    if (password) user.password = password; // Will be safely hashed by User model pre-save hook
+
+    await user.save();
+
+    // Update Doctor fields if provided
     if (specialization) doctor.specialization = specialization;
     if (slotDuration) doctor.slotDuration = slotDuration;
     if (workingHours) doctor.workingHours = workingHours;
     if (leaveDates) doctor.leaveDates = leaveDates;
 
     const updatedDoctor = await doctor.save();
+    
+    // Fetch again to populate and strip the password before returning
+    const finalDoctor = await Doctor.findById(updatedDoctor._id).populate('userId', '-password');
 
     res.status(200).json({
       message: 'Doctor updated successfully',
-      doctor: updatedDoctor
+      doctor: finalDoctor
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'Email already exists.' });
+    }
     console.error('Update doctor error:', error);
     res.status(500).json({ message: 'Server error during doctor update.' });
   }
@@ -77,42 +163,15 @@ export const deleteDoctor = async (req, res) => {
       return res.status(404).json({ message: 'Doctor not found.' });
     }
 
+    // Since our schema does not have an 'isActive' or 'status' field yet, 
+    // we cannot perform a safe "soft delete" (deactivation). 
+    // Therefore, we must hard-delete both the User and Doctor records.
+    await User.findByIdAndDelete(doctor.userId);
     await doctor.deleteOne();
 
-    res.status(200).json({ message: 'Doctor deleted successfully.' });
+    res.status(200).json({ message: 'Doctor and associated user account deleted successfully.' });
   } catch (error) {
     console.error('Delete doctor error:', error);
     res.status(500).json({ message: 'Server error during doctor deletion.' });
-  }
-};
-
-// @desc    Get all doctors
-// @route   GET /api/doctors
-// @access  Private (Authenticated users)
-export const getDoctors = async (req, res) => {
-  try {
-    const doctors = await Doctor.find({});
-    res.status(200).json(doctors);
-  } catch (error) {
-    console.error('Get doctors error:', error);
-    res.status(500).json({ message: 'Server error fetching doctors.' });
-  }
-};
-
-// @desc    Get single doctor
-// @route   GET /api/doctors/:id
-// @access  Private (Authenticated users)
-export const getDoctorById = async (req, res) => {
-  try {
-    const doctor = await Doctor.findById(req.params.id);
-
-    if (!doctor) {
-      return res.status(404).json({ message: 'Doctor not found.' });
-    }
-
-    res.status(200).json(doctor);
-  } catch (error) {
-    console.error('Get doctor by ID error:', error);
-    res.status(500).json({ message: 'Server error fetching doctor.' });
   }
 };
