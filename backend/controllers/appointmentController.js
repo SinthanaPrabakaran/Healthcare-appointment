@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import { generateSlots } from '../services/slotService.js';
-import { generatePreVisitSummary as generateSummaryLLM } from '../services/llmService.js';
+import { generatePreVisitSummary as generateSummaryLLM, generatePostVisitSummary as generatePostSummaryLLM } from '../services/llmService.js';
 
 // Helper function to validate inputs and doctor availability
 const validateSlotRequest = async (doctorId, date, startTime, endTime, symptoms) => {
@@ -263,7 +263,12 @@ export const getPatientAppointments = async (req, res) => {
         id: app.doctor._id,
         specialization: app.doctor.specialization,
         name: app.doctor.userId ? app.doctor.userId.name : 'Unknown'
-      }
+      },
+      postVisitNotes: app.postVisitNotes,
+      prescription: app.prescription,
+      followUpInstructions: app.followUpInstructions,
+      postVisitSummary: app.postVisitSummary,
+      completedAt: app.completedAt
     }));
 
     res.status(200).json({ appointments: formattedAppointments });
@@ -643,9 +648,51 @@ export const generatePostVisitSummary = async (req, res) => {
       return res.status(403).json({ message: 'You are not authorized to generate this summary' });
     }
 
-    // Tasks 6-10 will be implemented in the next step.
-    // For now, we return a 200 response to satisfy the first 5 tasks completion.
-    return res.status(200).json({ message: 'First 5 tasks of summary generation reached successfully' });
+    // Task 6: Only COMPLETED appointments can generate a post-visit summary
+    if (appointment.status !== 'COMPLETED') {
+      return res.status(409).json({ message: 'Post-visit summary can only be generated for completed appointments' });
+    }
+
+    // Task 7: Verify postVisitNotes exists and is not empty
+    if (!appointment.postVisitNotes || appointment.postVisitNotes.trim() === '') {
+      return res.status(400).json({ message: 'Post-visit notes are required' });
+    }
+
+    // Task 14: Prevent unnecessary regeneration if summary already exists
+    if (appointment.postVisitSummary && appointment.postVisitSummary.trim() !== '') {
+      return res.status(200).json({
+        message: 'Post-visit summary already exists',
+        summary: appointment.postVisitSummary,
+        appointmentId: appointment._id
+      });
+    }
+
+    // Tasks 8-12: Generate summary using Gemini service with error handling
+    let generatedSummary;
+    try {
+      generatedSummary = await generatePostSummaryLLM(
+        appointment.postVisitNotes,
+        appointment.prescription,
+        appointment.followUpInstructions
+      );
+    } catch (llmError) {
+      console.error('LLM Post-Visit Summary Error:', llmError.message);
+      return res.status(503).json({ message: 'Post-visit summary is temporarily unavailable' });
+    }
+
+    if (!generatedSummary || typeof generatedSummary !== 'string' || generatedSummary.trim() === '') {
+      return res.status(503).json({ message: 'Post-visit summary is temporarily unavailable' });
+    }
+
+    // Task 13: Save generated summary to database
+    appointment.postVisitSummary = generatedSummary.trim();
+    await appointment.save();
+
+    return res.status(200).json({
+      message: 'Post-visit summary generated successfully',
+      summary: appointment.postVisitSummary,
+      appointmentId: appointment._id
+    });
 
   } catch (error) {
     console.error('Generate post-visit summary error:', error);

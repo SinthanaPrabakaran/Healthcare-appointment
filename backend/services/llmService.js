@@ -95,3 +95,78 @@ Analyse these symptoms and return: urgency level (Low / Medium / High), chief co
     throw new Error(`Gemini LLM generation failed: ${error.message}`);
   }
 };
+
+export const generatePostVisitSummary = async (postVisitNotes, prescription = [], followUpInstructions = '') => {
+  if (!postVisitNotes || typeof postVisitNotes !== 'string' || postVisitNotes.trim() === '') {
+    throw new Error('Post-visit notes are required.');
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  const modelName = process.env.GEMINI_MODEL;
+
+  if (!modelName) {
+    throw new Error('GEMINI_MODEL is not configured.');
+  }
+
+  if (!apiKey) {
+    throw new Error('LLM API key is not configured.');
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  const formattedPrescription = Array.isArray(prescription) && prescription.length > 0
+    ? prescription.map(m => `- ${m.medicine}: ${m.dosage}, ${m.frequency} for ${m.duration}${m.instructions ? ` (${m.instructions})` : ''}`).join('\n')
+    : 'None';
+
+  const systemInstruction = `
+You are a medical assistant converting clinical consultation notes into a patient-friendly summary.
+
+Convert these clinical notes into a patient-friendly summary with medication schedule and follow-up steps.
+
+Requirements:
+- Use simple language.
+- Do not invent diagnoses.
+- Do not invent medicines.
+- Do not change dosage.
+- Do not change frequency.
+- Do not change duration.
+- Do not add medical facts that are not present in the doctor's notes.
+- Clearly explain the medication schedule.
+- Clearly explain follow-up instructions.
+- Do not provide a new diagnosis.
+- Do not recommend additional medication.
+- Do not contradict the doctor's prescription.
+- Make the result understandable to a normal patient.
+`;
+
+  const userPrompt = `
+Clinical notes:
+${postVisitNotes}
+
+Prescription:
+${formattedPrescription}
+
+Follow-up instructions:
+${followUpInstructions || 'None'}
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: userPrompt,
+      config: {
+        systemInstruction,
+        temperature: 0.3
+      }
+    });
+
+    const responseContent = response.text;
+    if (!responseContent || typeof responseContent !== 'string' || responseContent.trim() === '') {
+      throw new Error('LLM returned an empty response.');
+    }
+
+    return responseContent.trim();
+  } catch (error) {
+    throw new Error(`Gemini LLM generation failed: ${error.message}`);
+  }
+};
