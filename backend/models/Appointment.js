@@ -99,6 +99,11 @@ const appointmentSchema = new mongoose.Schema({
   completedAt: {
     type: Date,
     default: null
+  },
+  postVisitSummary: {
+    type: String,
+    trim: true,
+    default: null
   }
 }, {
   timestamps: true

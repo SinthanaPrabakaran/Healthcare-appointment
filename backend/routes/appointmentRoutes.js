@@ -9,7 +9,8 @@ import {
   generatePreVisitSummary,
   getPreVisitSummary,
   getDoctorAppointments,
-  completeAppointment
+  completeAppointment,
+  generatePostVisitSummary
 } from '../controllers/appointmentController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { authorizeRoles } from '../middleware/roleMiddleware.js';
@@ -40,6 +41,7 @@ router.get(
 // ==========================================
 router.get('/doctor', authorizeRoles('DOCTOR'), getDoctorAppointments);
 router.put('/:id/complete', authorizeRoles('DOCTOR'), completeAppointment);
+router.post('/:id/postvisit-summary', authorizeRoles('DOCTOR'), generatePostVisitSummary);
 
 // ==========================================
 // PATIENT ROUTES

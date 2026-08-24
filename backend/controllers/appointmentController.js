@@ -612,3 +612,43 @@ export const completeAppointment = async (req, res) => {
     res.status(500).json({ message: 'Server error completing appointment' });
   }
 };
+
+// @desc    Generate patient-friendly post-visit summary
+// @route   POST /api/appointments/:id/postvisit-summary
+// @access  Private/Doctor
+export const generatePostVisitSummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, role } = req.user;
+
+    // Task 2: Only DOCTOR may call this endpoint
+    if (role !== 'DOCTOR') {
+      return res.status(403).json({ message: 'Only doctors can generate this summary' });
+    }
+
+    // Task 3: Validate :id as a MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid appointment ID' });
+    }
+
+    // Task 4: Find the appointment
+    const appointment = await Appointment.findById(id).populate('doctor');
+    
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    // Task 5: The authenticated doctor must own the appointment
+    if (appointment.doctor.userId.toString() !== userId) {
+      return res.status(403).json({ message: 'You are not authorized to generate this summary' });
+    }
+
+    // Tasks 6-10 will be implemented in the next step.
+    // For now, we return a 200 response to satisfy the first 5 tasks completion.
+    return res.status(200).json({ message: 'First 5 tasks of summary generation reached successfully' });
+
+  } catch (error) {
+    console.error('Generate post-visit summary error:', error);
+    res.status(500).json({ message: 'Server error generating post-visit summary' });
+  }
+};
