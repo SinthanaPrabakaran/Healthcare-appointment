@@ -75,9 +75,47 @@ export const createDoctor = async (req, res) => {
 // @access  Private (Authenticated users)
 export const getDoctors = async (req, res) => {
   try {
-    // Use Mongoose populate to fetch User data, explicitly excluding the password
-    const doctors = await Doctor.find({}).populate('userId', '-password');
-    res.status(200).json(doctors);
+    const { specialization, name, page = 1, limit = 10 } = req.query;
+
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const skip = (pageNum - 1) * limitNum;
+
+    const query = {};
+
+    // Specialization search (case-insensitive, partial match)
+    if (specialization) {
+      query.specialization = { $regex: specialization, $options: 'i' };
+    }
+
+    // Name search requires querying User collection first
+    if (name) {
+      const matchingUsers = await User.find({
+        role: 'DOCTOR',
+        name: { $regex: name, $options: 'i' }
+      }).select('_id');
+      
+      const userIds = matchingUsers.map(user => user._id);
+      query.userId = { $in: userIds };
+    }
+
+    // Fetch doctors with pagination and populate safe user fields
+    const doctors = await Doctor.find(query)
+      .populate('userId', 'name email role')
+      .skip(skip)
+      .limit(limitNum);
+      
+    // Get total count for pagination metadata
+    const totalDoctors = await Doctor.countDocuments(query);
+
+    res.status(200).json({
+      doctors,
+      pagination: {
+        total: totalDoctors,
+        page: pageNum,
+        pages: Math.ceil(totalDoctors / limitNum)
+      }
+    });
   } catch (error) {
     console.error('Get doctors error:', error);
     res.status(500).json({ message: 'Server error fetching doctors.' });
@@ -89,7 +127,7 @@ export const getDoctors = async (req, res) => {
 // @access  Private (Authenticated users)
 export const getDoctorById = async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.params.id).populate('userId', '-password');
+    const doctor = await Doctor.findById(req.params.id).populate('userId', 'name email role');
 
     if (!doctor) {
       return res.status(404).json({ message: 'Doctor not found.' });
