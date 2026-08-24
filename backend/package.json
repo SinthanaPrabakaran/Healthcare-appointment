@@ -18,7 +18,8 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.9.3",
-    "node-cron": "^4.6.0"
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.0.5"
   },
   "type": "module",
   "devDependencies": {

@@ -16,6 +16,7 @@ import express from "express";
 import cors from "cors";
 
 import connectDB from "./config/db.js";
+import { initJobs } from "./jobs/index.js";
 import authRoutes from "./routes/authRoutes.js";
 import doctorRoutes from "./routes/doctorRoutes.js";
 import slotRoutes from "./routes/slotRoutes.js";
@@ -23,6 +24,7 @@ import appointmentRoutes from "./routes/appointmentRoutes.js";
 const app = express();
 
 connectDB();
+initJobs();
 
 app.use(cors());
 app.use(express.json());
