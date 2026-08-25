@@ -913,11 +913,9 @@ export function PatientView({
   onConnectCalendar: () => void;
 }) {
   const [tab, setTab] = useState<"Dashboard" | "Find Doctors" | "My Visits" | "Medications" | "Calendar Sync">("Dashboard");
-  const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
-  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
-
-  const selectedDoctor = doctors.find((d) => d.id === selectedDoctorId) || null;
-  const selectedAppointment = appointments.find((a) => a.id === selectedAppointmentId) || null;
+  const [bookingDoctor, setBookingDoctor] = useState<Doctor | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   return (
     <div className="space-y-6">
@@ -932,8 +930,8 @@ export function PatientView({
           value={tab}
           onChange={(t) => {
             setTab(t);
-            if (t !== "Find Doctors") setSelectedDoctorId(null);
-            if (t !== "My Visits") setSelectedAppointmentId(null);
+            if (t !== "Find Doctors") setBookingDoctor(null);
+            if (t !== "My Visits") setSelectedAppointment(null);
           }}
         />
       </GlassCard>
@@ -944,32 +942,42 @@ export function PatientView({
           reminders={reminders}
           calendarConnected={calendarSynced}
           onConnectCalendar={onConnectCalendar}
-          onGoFind={() => setTab("Find Doctors")}
+          onGoFind={(q) => {
+            setSearchQuery(q || "");
+            setTab("Find Doctors");
+          }}
         />
       )}
 
       {tab === "Find Doctors" && (
-        <DoctorDirectory
-          doctors={doctors}
-          onBookSlot={(doctorId, date, time, symptoms) => {
-            onBookAppointment(doctorId, date, time, symptoms);
-            setTab("My Visits");
-          }}
-          onHoldSlot={onHoldSlot}
-        />
+        <>
+          <DoctorDirectory
+            initialQuery={searchQuery}
+            onBook={(d) => setBookingDoctor(d)}
+          />
+          <BookingModal
+            doctor={bookingDoctor}
+            onClose={() => setBookingDoctor(null)}
+            onConfirm={({ doctor, date, time, symptoms }) => {
+              onBookAppointment(doctor.id, date, time, symptoms);
+              setBookingDoctor(null);
+              setTab("My Visits");
+            }}
+          />
+        </>
       )}
 
       {tab === "My Visits" && (
         selectedAppointment ? (
           <AppointmentDetail
             appointment={selectedAppointment}
-            onBack={() => setSelectedAppointmentId(null)}
+            onBack={() => setSelectedAppointment(null)}
+            onAddToCalendar={() => toast.success("Pushed to Google Calendar!")}
           />
         ) : (
-          <PatientAppointments
+          <MyAppointments
             appointments={appointments}
-            onCancel={onCancelAppointment}
-            onSelectAppt={(appt) => setSelectedAppointmentId(appt.id)}
+            onOpen={(appt) => setSelectedAppointment(appt)}
           />
         )
       )}
@@ -993,4 +1001,5 @@ export function PatientView({
     </div>
   );
 }
+
 
