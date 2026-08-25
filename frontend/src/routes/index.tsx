@@ -18,6 +18,9 @@ import {
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
+import { AuthProvider, useAuth, type UserRole } from "@/context/AuthContext";
+import { Login } from "@/components/auth/Login";
+import { Register } from "@/components/auth/Register";
 import { AdminConsole } from "@/components/pulse/admin";
 import { DoctorConsole } from "@/components/pulse/doctor";
 import { PatientView } from "@/components/pulse/patient";
@@ -33,22 +36,28 @@ import {
   type Doctor,
   type MedicationReminder,
   type Prescription,
-  type Role,
 } from "@/lib/pulse-data";
 
 export const Route = createFileRoute("/")({
-  component: AppShell,
+  component: AppRoot,
 });
 
-function AppShell() {
-  const [role, setRole] = useState<Role>("patient");
+function AppRoot() {
+  return (
+    <AuthProvider>
+      <MainAppShell />
+    </AuthProvider>
+  );
+}
+
+function MainAppShell() {
+  const { user, logout, setDemoUser } = useAuth();
+  const [authView, setAuthView] = useState<"login" | "register">("login");
+
   const [doctorsList, setDoctorsList] = useState<Doctor[]>(initialDoctors);
   const [appointmentsList, setAppointmentsList] = useState<Appointment[]>(initialAppointments);
   const [remindersList, setRemindersList] = useState<MedicationReminder[]>(initialReminders);
   const [calendarSynced, setCalendarSynced] = useState<boolean>(true);
-
-  // Active Patient View tab
-  const [patientTab, setPatientTab] = useState<"dashboard" | "doctors" | "appointments" | "reminders" | "calendar">("dashboard");
 
   // Live backend sync effect (attaches to localhost:5000/api if active)
   useEffect(() => {
@@ -100,7 +109,7 @@ function AppShell() {
       doctorId: doc.id,
       doctorName: doc.name,
       specialization: doc.specialization,
-      patientName: "Sinthana K",
+      patientName: user?.name || "Sinthana K",
       patientAge: 32,
       date,
       time,
@@ -175,7 +184,6 @@ function AppShell() {
       doctorsList.map((d) => (d.id === doctorId ? { ...d, slotDuration, leaveDates } : d))
     );
 
-    // Cancel affected bookings on leave dates
     setAppointmentsList(
       appointmentsList.map((a) => {
         if (a.doctorId === doctorId && leaveDates.includes(a.date) && a.status === "BOOKED") {
@@ -223,9 +231,24 @@ function AppShell() {
     setDoctorsList(doctorsList.filter((d) => d.id !== id));
   };
 
+  // If user is not authenticated -> render Login / Register views
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
+        {authView === "login" ? (
+          <Login onSwitchToRegister={() => setAuthView("register")} />
+        ) : (
+          <Register onSwitchToLogin={() => setAuthView("login")} />
+        )}
+      </div>
+    );
+  }
+
+  const currentRole: UserRole = user.role || "PATIENT";
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
-      {/* Top Navbar Header with Brand & Role Switcher */}
+      {/* Top Navbar Header with Brand, Role Switcher & Logout */}
       <header className="sticky top-0 z-40 glass-strong border-b border-border px-4 py-3 sm:px-6">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           
@@ -247,12 +270,12 @@ function AppShell() {
             </div>
           </div>
 
-          {/* Quick Role Switcher Toggle */}
+          {/* Quick Role Switcher Toggle (Preview) */}
           <div className="glass inline-flex items-center gap-1 rounded-2xl p-1 border border-border">
             <button
-              onClick={() => setRole("patient")}
+              onClick={() => setDemoUser("PATIENT")}
               className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
-                role === "patient"
+                currentRole === "PATIENT"
                   ? "bg-primary text-primary-foreground shadow-md"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -262,9 +285,9 @@ function AppShell() {
             </button>
 
             <button
-              onClick={() => setRole("doctor")}
+              onClick={() => setDemoUser("DOCTOR")}
               className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
-                role === "doctor"
+                currentRole === "DOCTOR"
                   ? "bg-teal text-accent-foreground shadow-md"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -274,9 +297,9 @@ function AppShell() {
             </button>
 
             <button
-              onClick={() => setRole("admin")}
+              onClick={() => setDemoUser("ADMIN")}
               className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
-                role === "admin"
+                currentRole === "ADMIN"
                   ? "bg-magenta text-white shadow-md"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -286,37 +309,32 @@ function AppShell() {
             </button>
           </div>
 
-          {/* Current User Badge */}
+          {/* Logged in User Profile & Logout */}
           <div className="flex items-center gap-3">
             <Avatar
               initials={
-                role === "patient"
-                  ? "SK"
-                  : role === "doctor"
-                  ? "AR"
-                  : "AD"
+                user.name
+                  ? user.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+                  : "PC"
               }
-              tone={role === "patient" ? 0 : role === "doctor" ? 1 : 5}
+              tone={currentRole === "PATIENT" ? 0 : currentRole === "DOCTOR" ? 1 : 5}
             />
             <div className="hidden sm:block">
-              <p className="text-xs font-bold leading-none">
-                {role === "patient"
-                  ? "Sinthana K"
-                  : role === "doctor"
-                  ? "Dr. Ananya Rao"
-                  : "System Admin"}
-              </p>
+              <p className="text-xs font-bold leading-none">{user.name}</p>
               <p className="text-[10px] text-muted-foreground capitalize mt-0.5">
-                {role} Portal
+                {currentRole} Portal
               </p>
             </div>
+            <Btn variant="outline" className="p-2 text-xs" onClick={logout} title="Sign Out">
+              <LogOut className="size-4" />
+            </Btn>
           </div>
         </div>
       </header>
 
       {/* Main Workspace Layout */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        {role === "patient" && (
+        {currentRole === "PATIENT" && (
           <PatientView
             doctors={doctorsList}
             appointments={appointmentsList}
@@ -334,7 +352,7 @@ function AppShell() {
           />
         )}
 
-        {role === "doctor" && (
+        {currentRole === "DOCTOR" && (
           <DoctorConsole
             doctor={doctorsList[0]}
             queue={appointmentsList}
@@ -343,7 +361,7 @@ function AppShell() {
           />
         )}
 
-        {role === "admin" && (
+        {currentRole === "ADMIN" && (
           <AdminConsole
             doctorsList={doctorsList}
             appointmentsList={appointmentsList}
