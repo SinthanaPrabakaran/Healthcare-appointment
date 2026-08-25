@@ -119,7 +119,8 @@ export const getDoctors = async (req, res) => {
 
     // Format response to flat structure
     const formattedDoctors = doctors.map(doc => ({
-      id: doc._id,
+      id: doc._id.toString(),
+      _id: doc._id.toString(),
       name: doc.userId ? doc.userId.name : 'Unknown',
       specialization: doc.specialization,
       workingHours: doc.workingHours,
@@ -154,10 +155,14 @@ export const getDoctorById = async (req, res) => {
       return res.status(400).json({ message: 'Invalid doctor ID format.' });
     }
 
-    const doctor = await Doctor.findById(id).populate('userId', 'name email role');
+    let doctor = await Doctor.findById(id).populate('userId', 'name email role');
 
     if (!doctor) {
-      return res.status(404).json({ message: 'Doctor not found.' });
+      doctor = await Doctor.findOne({ userId: id }).populate('userId', 'name email role');
+    }
+
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor profile not found.' });
     }
 
     // Format response to flat structure

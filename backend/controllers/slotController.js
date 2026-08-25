@@ -42,9 +42,13 @@ export const getDoctorSlots = async (req, res) => {
     }
 
     // Lookup Doctor
-    const doctor = await Doctor.findById(doctorId);
+    let doctor = await Doctor.findById(doctorId);
     if (!doctor) {
-      return res.status(404).json({ message: 'Doctor not found' });
+      doctor = await Doctor.findOne({ userId: doctorId });
+    }
+
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor profile not found' });
     }
 
     // Check if requested date is exactly a leave date
@@ -61,11 +65,23 @@ export const getDoctorSlots = async (req, res) => {
     // Determine day of the week based purely on the supplied calendar date (ignoring timezone)
     const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const dayName = daysOfWeek[exactDate.getUTCDay()];
+    const isWeekend = dayName === 'saturday' || dayName === 'sunday';
 
-    const workingHours = doctor.workingHours[dayName];
+    let workingHours = (doctor.workingHours && doctor.workingHours[dayName]) 
+      ? doctor.workingHours[dayName]
+      : null;
 
-    // If day is entirely disabled or missing
-    if (!workingHours || !workingHours.enabled) {
+    // Fallback: If workingHours for a weekday is missing or unconfigured, default to 09:00 - 17:00 enabled
+    if (!workingHours || workingHours.enabled === undefined) {
+      workingHours = {
+        enabled: !isWeekend,
+        start: '09:00',
+        end: '17:00'
+      };
+    }
+
+    // If day is explicitly disabled (e.g. weekend)
+    if (!workingHours.enabled) {
       return res.status(200).json({
         doctorId,
         date,
@@ -77,11 +93,12 @@ export const getDoctorSlots = async (req, res) => {
 
     // Generate slots
     try {
-      const generatedSlots = generateSlots(workingHours, doctor.slotDuration);
+      const slotDuration = doctor.slotDuration && doctor.slotDuration >= 5 ? doctor.slotDuration : 30;
+      const generatedSlots = generateSlots(workingHours, slotDuration);
       
-      // Phase 7: Reflect BOOKED and active HELD appointments
+      // Phase 7: Reflect BOOKED and active HELD appointments using doctor._id
       const activeAppointments = await Appointment.find({
-        doctor: doctorId,
+        doctor: doctor._id,
         date: date,
         status: { $in: ['BOOKED', 'HELD'] }
       });

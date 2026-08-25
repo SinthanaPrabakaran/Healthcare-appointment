@@ -4,19 +4,22 @@ import mongoose from 'mongoose';
 const daySchema = new mongoose.Schema({
   enabled: {
     type: Boolean,
-    default: false
+    default: true
   },
   start: {
     type: String,
     match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, // Validates 24-hour HH:mm format
-    required: function() { return this.enabled; }
+    default: '09:00'
   },
   end: {
     type: String,
     match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, // Validates 24-hour HH:mm format
-    required: function() { return this.enabled; }
+    default: '17:00'
   }
 }, { _id: false });
+
+const defaultWorkDay = () => ({ enabled: true, start: '09:00', end: '17:00' });
+const defaultOffDay = () => ({ enabled: false, start: '09:00', end: '17:00' });
 
 const doctorSchema = new mongoose.Schema({
   userId: {
@@ -31,17 +34,18 @@ const doctorSchema = new mongoose.Schema({
     trim: true
   },
   workingHours: {
-    monday: { type: daySchema, default: () => ({ enabled: false }) },
-    tuesday: { type: daySchema, default: () => ({ enabled: false }) },
-    wednesday: { type: daySchema, default: () => ({ enabled: false }) },
-    thursday: { type: daySchema, default: () => ({ enabled: false }) },
-    friday: { type: daySchema, default: () => ({ enabled: false }) },
-    saturday: { type: daySchema, default: () => ({ enabled: false }) },
-    sunday: { type: daySchema, default: () => ({ enabled: false }) }
+    monday: { type: daySchema, default: defaultWorkDay },
+    tuesday: { type: daySchema, default: defaultWorkDay },
+    wednesday: { type: daySchema, default: defaultWorkDay },
+    thursday: { type: daySchema, default: defaultWorkDay },
+    friday: { type: daySchema, default: defaultWorkDay },
+    saturday: { type: daySchema, default: defaultOffDay },
+    sunday: { type: daySchema, default: defaultOffDay }
   },
   slotDuration: {
     type: Number,
     required: true,
+    default: 30,
     min: 5
   },
   leaveDates: [{
