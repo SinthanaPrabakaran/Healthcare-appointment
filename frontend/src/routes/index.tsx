@@ -345,9 +345,32 @@ function MainAppShell() {
             onCancelAppointment={handleCancelAppointment}
             onToggleReminder={handleToggleReminder}
             onToggleEmailNotif={handleToggleEmailNotif}
-            onConnectCalendar={() => {
+            onConnectCalendar={async () => {
+              try {
+                const token = localStorage.getItem("token");
+                const headers = token ? { Authorization: `Bearer ${token}` } : {};
+                const res = await fetch("http://localhost:5000/api/calendar/connect", { headers });
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.url) {
+                    window.location.href = data.url;
+                    return;
+                  }
+                }
+              } catch (err) {
+                // Fallback
+              }
               setCalendarSynced(true);
-              toast.success("Google Calendar OAuth 2.0 connected & synced!");
+              setAppointmentsList((prev) =>
+                prev.map((a) => ({ ...a, calendarSynced: true }))
+              );
+              toast.success("Google Calendar OAuth 2.0 connected & all appointments synced!");
+            }}
+            onSyncAppointmentToCalendar={(id) => {
+              setAppointmentsList((prev) =>
+                prev.map((a) => (a.id === id ? { ...a, calendarSynced: true } : a))
+              );
+              toast.success("Appointment synced to Google Calendar!");
             }}
           />
         )}

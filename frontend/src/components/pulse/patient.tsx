@@ -53,7 +53,7 @@ import {
   type Slot,
   type Triage,
 } from "@/lib/pulse-data";
-import { cn } from "@/lib/utils";
+import { cn, getGoogleCalendarUrl } from "@/lib/utils";
 
 const fmtDate = (d: string) =>
   new Date(`${d}T00:00:00`).toLocaleDateString(undefined, {
@@ -607,9 +607,15 @@ export function AppointmentDetail({
         </Btn>
         <div className="flex items-center gap-2">
           <StatusBadge status={a.status} />
-          <Btn variant="aqua" onClick={() => onAddToCalendar(a)}>
+          <a
+            href={getGoogleCalendarUrl(a)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => onAddToCalendar(a)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all bg-accent text-accent-foreground hover:opacity-90 border border-transparent"
+          >
             <CalendarPlus className="size-4" /> Add to Google Calendar
-          </Btn>
+          </a>
         </div>
       </div>
 
@@ -878,9 +884,15 @@ export function CalendarSyncPage({
                   <CheckCircle2 className="size-3" /> Synced
                 </Pill>
               ) : (
-                <Btn variant="outline" onClick={() => onAddToCalendar(a)}>
-                  <CalendarPlus className="size-4" /> Add
-                </Btn>
+                <a
+                  href={getGoogleCalendarUrl(a)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => onAddToCalendar(a)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all border border-input bg-transparent text-foreground hover:bg-secondary"
+                >
+                  <CalendarPlus className="size-4" /> Add to Google Calendar
+                </a>
               )}
             </GlassCard>
           ))}
@@ -888,6 +900,7 @@ export function CalendarSyncPage({
     </div>
   );
 }
+
 
 export function PatientView({
   doctors,
@@ -900,6 +913,7 @@ export function PatientView({
   onToggleReminder,
   onToggleEmailNotif,
   onConnectCalendar,
+  onSyncAppointmentToCalendar,
 }: {
   doctors: Doctor[];
   appointments: Appointment[];
@@ -911,11 +925,21 @@ export function PatientView({
   onToggleReminder: (id: string, time: string) => void;
   onToggleEmailNotif: (id: string) => void;
   onConnectCalendar: () => void;
+  onSyncAppointmentToCalendar?: (id: string) => void;
 }) {
   const [tab, setTab] = useState<"Dashboard" | "Find Doctors" | "My Visits" | "Medications" | "Calendar Sync">("Dashboard");
   const [bookingDoctor, setBookingDoctor] = useState<Doctor | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const handleSyncAppt = (appt: Appointment) => {
+    if (onSyncAppointmentToCalendar) {
+      onSyncAppointmentToCalendar(appt.id);
+    } else {
+      appt.calendarSynced = true;
+      toast.success("Appointment synced to Google Calendar!");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -972,7 +996,7 @@ export function PatientView({
           <AppointmentDetail
             appointment={selectedAppointment}
             onBack={() => setSelectedAppointment(null)}
-            onAddToCalendar={() => toast.success("Pushed to Google Calendar!")}
+            onAddToCalendar={(a) => handleSyncAppt(a)}
           />
         ) : (
           <MyAppointments
@@ -995,11 +1019,12 @@ export function PatientView({
           connected={calendarSynced}
           onConnect={onConnectCalendar}
           appointments={appointments}
-          onAddToCalendar={() => toast.success("Event pushed to Google Calendar!")}
+          onAddToCalendar={(a) => handleSyncAppt(a)}
         />
       )}
     </div>
   );
 }
+
 
 
