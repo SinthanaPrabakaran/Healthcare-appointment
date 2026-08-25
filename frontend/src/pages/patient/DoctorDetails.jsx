@@ -177,7 +177,30 @@ const DoctorDetails = () => {
   };
 
   if (loading) return <LoadingSpinner message="Retrieving doctor profile & slot availability..." />;
-  if (!doctor) return <AlertMessage type="error" message="Doctor profile not found." />;
+
+  if (!doctor) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-12 space-y-6">
+        <Link to="/patient/doctors" className="inline-flex items-center space-x-1.5 text-xs font-bold text-teal-400 hover:text-teal-300 transition">
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to Specialist Directory</span>
+        </Link>
+        <div className="glass-card rounded-3xl border border-slate-800 p-10 text-center space-y-4">
+          <Stethoscope className="w-12 h-12 text-slate-600 mx-auto" />
+          <h2 className="text-xl font-bold text-white">Physician Profile Not Found</h2>
+          <p className="text-sm text-slate-400 max-w-md mx-auto">
+            {error || "The doctor profile you requested is not available in our directory or may have been updated."}
+          </p>
+          <Link
+            to="/patient/doctors"
+            className="inline-flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-teal-400 to-cyan-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg teal-glow"
+          >
+            <span>Browse Active Specialists</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -211,7 +234,17 @@ const DoctorDetails = () => {
         {/* Doctor Schedule Pill */}
         <div className="bg-slate-900/90 p-4 rounded-2xl border border-slate-800 text-xs space-y-1 text-slate-300">
           <p className="font-bold text-white uppercase tracking-wider text-[11px]">📅 Clinical Schedule</p>
-          <p><strong className="text-slate-400">Days:</strong> {doctor.workingHours ? doctor.workingHours.map(w => w.day).join(', ') : 'Mon - Fri'}</p>
+          <p>
+            <strong className="text-slate-400">Days:</strong>{' '}
+            {Array.isArray(doctor.workingHours)
+              ? doctor.workingHours.map(w => w.day).join(', ')
+              : typeof doctor.workingHours === 'object' && doctor.workingHours !== null
+              ? Object.keys(doctor.workingHours)
+                  .filter(day => doctor.workingHours[day]?.enabled)
+                  .map(d => d.charAt(0).toUpperCase() + d.slice(1))
+                  .join(', ') || 'Mon - Fri'
+              : 'Mon - Fri'}
+          </p>
           <p><strong className="text-slate-400">Leave Dates:</strong> {doctor.leaveDates && doctor.leaveDates.length > 0 ? doctor.leaveDates.join(', ') : 'None'}</p>
         </div>
       </div>
@@ -334,10 +367,17 @@ const DoctorDetails = () => {
           </div>
         )}
 
+        {!selectedSlot && (
+          <div className="p-3.5 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-xs text-cyan-300 flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span>Click an available green time slot above to select your consultation time.</span>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={handleBooking}
-          disabled={bookingLoading || !selectedSlot}
+          disabled={bookingLoading}
           className="w-full py-4 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-300 hover:from-teal-300 hover:to-cyan-300 text-slate-950 font-black text-sm rounded-xl shadow-xl teal-glow transition duration-200 disabled:opacity-40 flex items-center justify-center space-x-2"
         >
           <CheckCircle2 className="w-5 h-5" />
